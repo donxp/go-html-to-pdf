@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -22,11 +21,11 @@ func main() {
 	http.ListenAndServe(fmt.Sprintf(":%d", mustGetHttpServerPort()), nil)
 }
 
-func htmlToPdf(html string) []byte {
+func generatePdfFromHtml(html string) []byte {
 	ctx, cancel := chromedp.NewContext(context.Background())
 	defer cancel()
 
-	var buf []byte
+	var buffer []byte
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate("about:blank"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -36,11 +35,19 @@ func htmlToPdf(html string) []byte {
 			}
 			return page.SetDocumentContent(frameTree.Frame.ID, html).Do(ctx)
 		}),
-		printToPDF(&buf)); err != nil {
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			buf, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
+	
+			if err != nil {
+				return err
+			}
+			buffer = buf
+			return nil
+		})); err != nil {
 		panic(err)
 	}
 
-	return buf
+	return buffer
 }
 
 func handlePostGenerate(w http.ResponseWriter, r *http.Request) {
@@ -60,23 +67,11 @@ func handlePostGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		
 		htmlBody := string(body[:])
-		generatedPdf := htmlToPdf(htmlBody)
+		generatedPdf := generatePdfFromHtml(htmlBody)
 		w.Write(generatedPdf)
 	default:
 		http.Error(w, "404 not found", http.StatusNotFound)
 	}
-}
-
-func printToPDF(res *[]byte) chromedp.ActionFunc {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		buf, _, err := page.PrintToPDF().WithPrintBackground(false).Do(ctx)
-
-		if err != nil {
-			return err
-		}
-		*res = buf
-		return nil
-	})
 }
 
 func mustGetHttpServerPort() int {
